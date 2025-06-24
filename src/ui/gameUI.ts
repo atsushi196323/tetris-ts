@@ -1,5 +1,5 @@
 import * as Phaser from "phaser";
-import { TetrominoType } from "../nextAndHold";
+import { TetrominoType } from "../tetromino";
 
 /**
  * ゲームの状態を表す列挙型
@@ -75,38 +75,13 @@ export class GameUI {
     this.scene = scene;
     this.config = config;
     this.createUI();
-    this.setupDebugListeners(); // デバッグリスナー追加
   }
 
-  /**
-   * デバッグ用リスナーを設定
-   */
-  private setupDebugListeners(): void {
-    console.log("GameUI: Setting up debug listeners...");
-
-    // キーボードショートカット
-    this.scene.input.keyboard?.on("keydown-ENTER", () => {
-      console.log("GameUI: ENTER pressed - current state:", this.currentState);
-      if (this.currentState === GameState.MainMenu) {
-        this.startGame();
-      }
-    });
-
-    this.scene.input.keyboard?.on("keydown-ESC", () => {
-      console.log("GameUI: ESC pressed - toggling pause");
-      if (this.currentState === GameState.Playing) {
-        this.pauseGame();
-      } else if (this.currentState === GameState.Paused) {
-        this.resumeGame();
-      }
-    });
-  }
 
   /**
    * UIを作成する
    */
   private createUI(): void {
-    console.log("GameUI: Creating UI...");
     const { width, height } = this.scene.cameras.main;
 
     // ゲームエリアを考慮したレイアウト（中央にゲーム、両側にUI）
@@ -122,7 +97,6 @@ export class GameUI {
     // オーバーレイ画面
     this.createOverlays();
 
-    console.log("GameUI: UI created successfully");
   }
 
   /**
@@ -240,13 +214,12 @@ export class GameUI {
    * オーバーレイ画面を作成する
    */
   private createOverlays(): void {
-    console.log("GameUI: Creating overlays...");
     const { width, height } = this.scene.cameras.main;
 
     // メインメニュー - 修正：startGame()を呼び出す
     this.mainMenuOverlay = this.createOverlay("TETRIS", [
       { text: "START", callback: () => this.startGame() }, // ← 修正点
-      { text: "SETTINGS", callback: () => console.log("Settings") },
+      { text: "SETTINGS", callback: () => {} },
     ]);
 
     // ポーズ画面 - 修正：resumeGame()を呼び出す
@@ -264,7 +237,6 @@ export class GameUI {
 
     // 初期状態を設定
     this.setState(GameState.MainMenu);
-    console.log("GameUI: Overlays created successfully");
   }
 
   /**
@@ -367,9 +339,7 @@ export class GameUI {
 
     container.add([bg, label]);
 
-    // ホバー効果とクリックイベント - デバッグログ追加
     bg.on("pointerover", () => {
-      console.log(`GameUI: Hovering over button: ${text}`);
       bg.setScale(1.1);
     });
 
@@ -378,7 +348,6 @@ export class GameUI {
     });
 
     bg.on("pointerdown", () => {
-      console.log(`GameUI: Button clicked: ${text}`);
       callback();
     });
 
@@ -393,19 +362,16 @@ export class GameUI {
    * ゲームを開始する - 新規追加
    */
   private startGame(): void {
-    console.log("GameUI: Starting game...");
     this.setState(GameState.Playing);
 
     // GameSceneにゲーム開始イベントを送信
     this.scene.events.emit("gameStart");
-    console.log("GameUI: Game start event emitted");
   }
 
   /**
    * ゲームを一時停止する - 新規追加
    */
   private pauseGame(): void {
-    console.log("GameUI: Pausing game...");
     this.setState(GameState.Paused);
 
     // GameSceneにゲーム一時停止イベントを送信
@@ -416,7 +382,6 @@ export class GameUI {
    * ゲームを再開する - 新規追加
    */
   private resumeGame(): void {
-    console.log("GameUI: Resuming game...");
     this.setState(GameState.Playing);
 
     // GameSceneにゲーム再開イベントを送信
@@ -427,7 +392,6 @@ export class GameUI {
    * メインメニューに戻る - 新規追加
    */
   private goToMainMenu(): void {
-    console.log("GameUI: Going to main menu...");
     this.setState(GameState.MainMenu);
 
     // GameSceneにゲーム停止イベントを送信
@@ -438,7 +402,6 @@ export class GameUI {
    * ゲームオーバー状態にする - 新規追加
    */
   public gameOver(): void {
-    console.log("GameUI: Game over!");
     this.setState(GameState.GameOver);
   }
 
@@ -554,7 +517,6 @@ export class GameUI {
    * @param state - 新しいゲーム状態
    */
   public setState(state: GameState): void {
-    console.log(`GameUI: Setting state from ${this.currentState} to ${state}`);
     this.currentState = state;
 
     // すべてのオーバーレイを非表示
@@ -566,18 +528,14 @@ export class GameUI {
     switch (state) {
       case GameState.MainMenu:
         this.mainMenuOverlay.setVisible(true);
-        console.log("GameUI: Main menu overlay visible");
         break;
       case GameState.Playing:
-        console.log("GameUI: Playing state - all overlays hidden");
         break;
       case GameState.Paused:
         this.pauseOverlay.setVisible(true);
-        console.log("GameUI: Pause overlay visible");
         break;
       case GameState.GameOver:
         this.gameOverOverlay.setVisible(true);
-        console.log("GameUI: Game over overlay visible");
         break;
     }
   }
@@ -594,7 +552,6 @@ export class GameUI {
    * ゲームをリスタートする - 修正
    */
   private restartGame(): void {
-    console.log("GameUI: Restarting game...");
 
     // ゲームリスタートのイベントを発行
     this.scene.events.emit("gameRestart");
@@ -605,7 +562,6 @@ export class GameUI {
    * UIを破棄する
    */
   public destroy(): void {
-    console.log("GameUI: Destroying UI...");
     // コンテナとテキストの破棄
     this.mainMenuOverlay?.destroy();
     this.pauseOverlay?.destroy();
@@ -617,22 +573,6 @@ export class GameUI {
     this.linesText?.destroy();
   }
 
-  // ========================================
-  // デバッグ用メソッド
-  // ========================================
-
-  /**
-   * デバッグ情報を出力する
-   */
-  public debugInfo(): void {
-    console.log("=== GameUI Debug Info ===");
-    console.log("Current State:", this.currentState);
-    console.log("Main Menu Visible:", this.mainMenuOverlay?.visible);
-    console.log("Pause Overlay Visible:", this.pauseOverlay?.visible);
-    console.log("Game Over Overlay Visible:", this.gameOverOverlay?.visible);
-    console.log("Scene:", this.scene);
-    console.log("========================");
-  }
 }
 
 /**

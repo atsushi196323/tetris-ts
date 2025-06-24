@@ -1,66 +1,14 @@
 import * as Phaser from "phaser";
 import { GameUI, GameState, getDefaultUIConfig } from "./ui/gameUI";
-import { TetrominoType } from "./nextAndHold";
 import {
   generateTetromino,
   BlockShape,
+  TetrominoType,
   TETROMINO_COLORS,
   getTetrominoByIndex,
 } from "./tetromino";
 import { SoundManager, SoundType } from "./assets/sounds/soundAndEffect";
 
-/**
- * デバッグ用のログレベル
- */
-enum LogLevel {
-  DEBUG = 0,
-  INFO = 1,
-  WARN = 2,
-  ERROR = 3,
-}
-
-/**
- * デバッグ用のログ出力クラス
- */
-class DebugLogger {
-  private static level: LogLevel = LogLevel.DEBUG;
-
-  static debug(message: string, data?: any): void {
-    if (this.level <= LogLevel.DEBUG) {
-      console.log(
-        `[DEBUG] ${new Date().toISOString()} - ${message}`,
-        data || ""
-      );
-    }
-  }
-
-  static info(message: string, data?: any): void {
-    if (this.level <= LogLevel.INFO) {
-      console.log(
-        `[INFO] ${new Date().toISOString()} - ${message}`,
-        data || ""
-      );
-    }
-  }
-
-  static warn(message: string, data?: any): void {
-    if (this.level <= LogLevel.WARN) {
-      console.warn(
-        `[WARN] ${new Date().toISOString()} - ${message}`,
-        data || ""
-      );
-    }
-  }
-
-  static error(message: string, error?: any): void {
-    if (this.level <= LogLevel.ERROR) {
-      console.error(
-        `[ERROR] ${new Date().toISOString()} - ${message}`,
-        error || ""
-      );
-    }
-  }
-}
 
 /**
  * ゲーム定数
@@ -87,10 +35,6 @@ const GAME_CONFIG = {
     MESSAGE_TEXT: "#00ff00",
     MESSAGE_BACKGROUND: "#000000",
   },
-  DEBUG: {
-    MAX_SPAWN_ATTEMPTS: 5, // 無限ループ防止
-    PERFORMANCE_MONITOR: true, // パフォーマンス監視
-  },
 } as const;
 
 /**
@@ -105,25 +49,9 @@ const WALL_KICK_OFFSETS = [
 ] as const;
 
 /**
- * テトリスゲームのメインシーンクラス（デバッグ機能付き）
+ * テトリスゲームのメインシーンクラス
  */
 export class GameScene extends Phaser.Scene {
-  // デバッグ用カウンター
-  private debugCounters = {
-    spawnAttempts: 0,
-    lockPieceCalls: 0,
-    clearLinesCalls: 0,
-    rotationAttempts: 0,
-    lastOperationTime: 0,
-  };
-
-  // パフォーマンス監視
-  private performanceMonitor = {
-    enabled: GAME_CONFIG.DEBUG.PERFORMANCE_MONITOR,
-    frameCount: 0,
-    lastCheck: 0,
-    avgFrameTime: 0,
-  };
 
   // ゲーム状態
   private gameState = {
@@ -163,283 +91,65 @@ export class GameScene extends Phaser.Scene {
 
   constructor() {
     super({ key: "GameScene" });
-    DebugLogger.info("GameScene constructor called");
   }
 
-  /**
-   * ===================================
-   * Phaser ライフサイクルメソッド
-   * ===================================
-   */
+  private pieceQueue: TetrominoType[] = [];
+  private readonly QUEUE_SIZE = 3;
 
   create(): void {
-    DebugLogger.info("GameScene create() started");
-    try {
-      this.initializeGame();
-      this.setupUI();
-      this.setupInputs();
-      this.setupEventListeners();
-      this.initializeDebugDisplay();
-      this.startPerformanceMonitoring();
-      DebugLogger.info("GameScene create() completed successfully");
-    } catch (error) {
-      DebugLogger.error("Error in GameScene create()", error);
-      throw error;
-    }
+    this.pieceQueue = [];
+    this.initializeGame();
+    this.setupUI();
+    this.setupInputs();
+    this.setupEventListeners();
   }
 
   update(time: number, delta: number): void {
-    try {
-      this.updatePerformanceMonitor(time, delta);
-      this.checkForHangs(time);
-    } catch (error) {
-      DebugLogger.error("Error in GameScene update()", error);
-    }
   }
 
   destroy(): void {
-    DebugLogger.info("GameScene destroy() called");
-    try {
-      this.cleanup();
-    } catch (error) {
-      DebugLogger.error("Error in GameScene destroy()", error);
-    }
+    this.cleanup();
   }
 
-  /**
-   * ===================================
-   * デバッグ・監視メソッド
-   * ===================================
-   */
-
-  private startPerformanceMonitoring(): void {
-    if (!this.performanceMonitor.enabled) return;
-
-    this.performanceMonitor.lastCheck = Date.now();
-
-    // 5秒ごとにパフォーマンス情報を出力
-    this.time.addEvent({
-      delay: 5000,
-      callback: () => this.logPerformanceInfo(),
-      loop: true,
-    });
-  }
-
-  private updatePerformanceMonitor(time: number, delta: number): void {
-    if (!this.performanceMonitor.enabled) return;
-
-    this.performanceMonitor.frameCount++;
-    this.performanceMonitor.avgFrameTime =
-      (this.performanceMonitor.avgFrameTime + delta) / 2;
-  }
-
-  private logPerformanceInfo(): void {
-    const now = Date.now();
-    const timeDiff = now - this.performanceMonitor.lastCheck;
-    const fps = Math.round(
-      (this.performanceMonitor.frameCount * 1000) / timeDiff
-    );
-
-    DebugLogger.info(
-      `Performance: FPS=${fps}, AvgFrameTime=${this.performanceMonitor.avgFrameTime.toFixed(2)}ms`
-    );
-    DebugLogger.debug("Debug Counters", this.debugCounters);
-
-    this.performanceMonitor.frameCount = 0;
-    this.performanceMonitor.lastCheck = now;
-  }
-
-  private checkForHangs(currentTime: number): void {
-    const timeSinceLastOp = currentTime - this.debugCounters.lastOperationTime;
-
-    // 5秒間操作がない場合は警告
-    if (timeSinceLastOp > 5000 && this.gameState.isPlaying) {
-      DebugLogger.warn(
-        `No operations for ${timeSinceLastOp}ms - possible hang?`
-      );
-    }
-  }
-
-  private logOperation(operation: string, data?: any): void {
-    this.debugCounters.lastOperationTime = Date.now();
-    DebugLogger.debug(`Operation: ${operation}`, data);
-  }
-
-  /**
-   * ===================================
-   * 初期化メソッド（デバッグ強化）
-   * ===================================
-   */
 
   private initializeGame(): void {
-    DebugLogger.debug("Initializing game...");
     this.initializeGrid();
     this.gridGraphics = this.add.graphics();
     this.drawGrid();
   }
 
   private setupUI(): void {
-    DebugLogger.debug("Setting up UI...");
     const uiConfig = getDefaultUIConfig();
     this.gameUI = new GameUI(this, uiConfig);
   }
 
   private setupInputs(): void {
-    DebugLogger.debug("Setting up inputs...");
     this.cursors = this.input.keyboard!.createCursorKeys();
   }
 
-  private initializeDebugDisplay(): void {
-    DebugLogger.debug("Initializing debug display...");
-    this.gameUI.updateScore(0, 1, 0);
-    this.gameUI.updateNextPieces([
-      TetrominoType.T,
-      TetrominoType.I,
-      TetrominoType.O,
-    ]);
-  }
-
   private initializeGrid(): void {
-    DebugLogger.debug("Initializing grid...");
     this.grid = Array(GAME_CONFIG.GRID.HEIGHT)
       .fill(null)
       .map(() => Array(GAME_CONFIG.GRID.WIDTH).fill(0));
   }
 
-  /**
-   * ===================================
-   * イベントリスナー設定（エラーハンドリング強化）
-   * ===================================
-   */
-
   private setupEventListeners(): void {
-    DebugLogger.debug("Setting up event listeners...");
-
     const eventHandlers = {
-      gameStart: () =>
-        this.safeExecute(() => this.handleGameStart(), "handleGameStart"),
-      gamePause: () =>
-        this.safeExecute(() => this.handleGamePause(), "handleGamePause"),
-      gameResume: () =>
-        this.safeExecute(() => this.handleGameResume(), "handleGameResume"),
-      gameRestart: () =>
-        this.safeExecute(() => this.handleGameRestart(), "handleGameRestart"),
-      gameStop: () =>
-        this.safeExecute(() => this.handleGameStop(), "handleGameStop"),
+      gameStart: () => this.handleGameStart(),
+      gamePause: () => this.handleGamePause(),
+      gameResume: () => this.handleGameResume(),
+      gameRestart: () => this.handleGameRestart(),
+      gameStop: () => this.handleGameStop(),
     };
 
     Object.entries(eventHandlers).forEach(([event, handler]) => {
       this.events.on(event, handler);
     });
-
-    DebugLogger.debug("Event listeners setup completed");
   }
 
-  private safeExecute(fn: () => void, name: string): void {
-    try {
-      DebugLogger.debug(`Executing: ${name}`);
-      fn();
-    } catch (error) {
-      DebugLogger.error(`Error in ${name}`, error);
-      // ゲームを安全な状態に戻す
-      this.handleError(error, name);
-    }
-  }
 
-  private handleError(error: any, context: string): void {
-    DebugLogger.error(`Handling error in ${context}`, error);
-
-    // ゲームを一時停止
-    this.gameState.isPlaying = false;
-
-    // タイマーを停止
-    this.stopFallTimer();
-
-    // エラー情報を表示
-    this.showErrorMessage(`Error in ${context}: ${error.message}`);
-  }
-
-  private showErrorMessage(message: string): void {
-    const { width, height } = this.cameras.main;
-
-    const errorMessage = this.add
-      .text(width / 2, height / 2, `ERROR!\n${message}`, {
-        fontSize: "24px",
-        color: "#ff0000",
-        backgroundColor: "#000000",
-        padding: { x: 20, y: 10 },
-        align: "center",
-      })
-      .setOrigin(0.5);
-
-    this.time.delayedCall(5000, () => {
-      errorMessage.destroy();
-    });
-  }
-
-  /**
-   * ===================================
-   * ゲーム制御メソッド（修正版）
-   * ===================================
-   */
-
-  private startGameplay(): void {
-    this.logOperation("startGameplay");
-
-    // 重複実行チェック
-    if (this.gameState.isPlaying) {
-      DebugLogger.warn("startGameplay called while already playing");
-      return;
-    }
-
-    this.gameState.isPlaying = true;
-    this.resetGameState();
-    this.clearGrid();
-    this.drawGrid();
-    this.spawnNewPiece();
-    this.startFallTimer();
-    this.setupKeyboardControls();
-
-    // ゲーム開始後1.5秒間は入力をロック
-    this.isInputLocked = true;
-    this.time.delayedCall(1500, () => {
-      this.isInputLocked = false;
-      DebugLogger.debug("Input unlocked - controls are now active");
-    });
-
-    // メッセージ表示（重複削除）
-    this.showGameStartMessage();
-
-    DebugLogger.info("Gameplay started successfully");
-  }
-
-  /**
-   * ===================================
-   * ピース操作メソッド（安全性強化）
-   * ===================================
-   */
-
-  private spawnNewPiece(): void {
-    this.logOperation("spawnNewPiece");
-    this.debugCounters.spawnAttempts++;
-
-    // 無限ループ防止
-    if (
-      this.debugCounters.spawnAttempts > GAME_CONFIG.DEBUG.MAX_SPAWN_ATTEMPTS
-    ) {
-      DebugLogger.error("Too many spawn attempts - forcing game over");
-      this.gameOver();
-      return;
-    }
-
-    // ゲーム終了チェック
-    if (!this.gameState.isPlaying) {
-      DebugLogger.warn("spawnNewPiece called when game is not playing");
-      return;
-    }
-
-    const tetrominoIndex = Math.floor(Math.random() * 7);
-    const tetrominoTypes = [
+  private generateRandomTetromino(): TetrominoType {
+    const pieces: TetrominoType[] = [
       TetrominoType.I,
       TetrominoType.O,
       TetrominoType.T,
@@ -449,9 +159,97 @@ export class GameScene extends Phaser.Scene {
       TetrominoType.L,
     ];
 
-    const generatedShape = getTetrominoByIndex(tetrominoIndex);
-    const pieceType = tetrominoTypes[tetrominoIndex];
+    const randomIndex = Math.floor(Math.random() * pieces.length);
+    return pieces[randomIndex];
+  }
 
+  private initializePieceQueue(): void {
+    this.pieceQueue = [];
+    const initialQueueSize = this.QUEUE_SIZE + 1;
+    
+    while (this.pieceQueue.length < initialQueueSize) {
+      const piece = this.generateRandomTetromino();
+      this.pieceQueue.push(piece);
+    }
+  }
+
+  private updateNextDisplay(): void {
+    const nextPieces = this.pieceQueue.slice(0, this.QUEUE_SIZE);
+    this.gameUI.updateNextPieces(nextPieces);
+  }
+
+  private startGameplay(): void {
+    if (this.gameState.isPlaying) {
+      return;
+    }
+
+    this.gameState.isPlaying = true;
+    this.resetGameState();
+    this.clearGrid();
+    this.drawGrid();
+    this.initializePieceQueue();
+    this.updateNextDisplay();
+    this.spawnNewPiece();
+    this.startFallTimer();
+    this.setupKeyboardControls();
+
+    this.isInputLocked = true;
+    this.time.delayedCall(1500, () => {
+      this.isInputLocked = false;
+    });
+
+    this.showGameStartMessage();
+  }
+
+  /**
+   * ===================================
+   * ピース操作メソッド（安全性強化）
+   * ===================================
+   */
+
+  private spawnNewPiece(): void {
+    if (!this.gameState.isPlaying) {
+      return;
+    }
+
+    if (this.pieceQueue.length === 0) {
+      this.initializePieceQueue();
+    }
+
+    // キュー先頭から取り出し
+    const pieceType = this.pieceQueue.shift();
+    
+    if (pieceType === undefined) {
+      this.gameOver();
+      return;
+    }
+
+    // generateTetromino を使用して正しくテトロミノを生成
+    let generatedShape: number[][];
+    try {
+      // pieceTypeは既に数値型なので直接使用
+      generatedShape = getTetrominoByIndex(pieceType);
+
+      // 生成されたシェイプが有効かチェック
+      if (
+        !generatedShape ||
+        !Array.isArray(generatedShape) ||
+        generatedShape.length === 0
+      ) {
+        throw new Error(`Invalid shape generated for piece type: ${pieceType}`);
+      }
+    } catch (error) {
+      this.gameOver();
+      return;
+    }
+
+    // 新規追加＆Next更新
+    const newPiece = this.generateRandomTetromino();
+    this.pieceQueue.push(newPiece);
+    
+    this.updateNextDisplay();
+
+    // 現在のピースをセット
     this.currentPiece = {
       blocks: generatedShape,
       type: pieceType,
@@ -460,30 +258,19 @@ export class GameScene extends Phaser.Scene {
     };
 
     if (!this.canPlacePiece(this.currentPiece.x, this.currentPiece.y)) {
-      DebugLogger.warn("Cannot place new piece - game over");
       this.gameOver();
       return;
     }
-
-    // 成功したらカウンターをリセット
-    this.debugCounters.spawnAttempts = 0;
+    
     this.redrawAll();
-    DebugLogger.debug("New piece spawned:", pieceType);
   }
 
   private lockPiece(): void {
-    this.logOperation("lockPiece");
-    this.debugCounters.lockPieceCalls++;
-
-    if (!this.currentPiece.blocks || !this.currentPiece.type) {
-      DebugLogger.warn("lockPiece called with no current piece");
-      return;
-    }
-
-    // 無限ループ防止
-    if (this.debugCounters.lockPieceCalls > 100) {
-      DebugLogger.error("Too many lockPiece calls - possible infinite loop");
-      this.gameOver();
+    if (
+      !this.currentPiece.blocks ||
+      this.currentPiece.type === null ||
+      this.currentPiece.type === undefined
+    ) {
       return;
     }
 
@@ -510,15 +297,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private checkAndClearLines(): void {
-    this.logOperation("checkAndClearLines");
-    this.debugCounters.clearLinesCalls++;
-
-    // 無限ループ防止
-    if (this.debugCounters.clearLinesCalls > 50) {
-      DebugLogger.error("Too many checkAndClearLines calls");
-      return;
-    }
-
     let linesCleared = 0;
     const completedRows: number[] = [];
 
@@ -537,27 +315,12 @@ export class GameScene extends Phaser.Scene {
 
     if (linesCleared > 0) {
       this.updateScore(linesCleared);
-      DebugLogger.info(`Cleared ${linesCleared} lines!`);
     }
-
-    // 処理完了後カウンターをリセット
-    this.debugCounters.clearLinesCalls = 0;
   }
 
   private gameOver(): void {
-    this.logOperation("gameOver");
-    DebugLogger.info("Game Over triggered");
-
     this.gameState.isPlaying = false;
     this.stopFallTimer();
-
-    // カウンターをリセット
-    Object.keys(this.debugCounters).forEach((key) => {
-      if (key !== "lastOperationTime") {
-        (this.debugCounters as any)[key] = 0;
-      }
-    });
-
     this.gameUI.gameOver();
   }
 
@@ -568,8 +331,6 @@ export class GameScene extends Phaser.Scene {
    */
 
   private setupKeyboardControls(): void {
-    DebugLogger.debug("Setting up keyboard controls...");
-
     this.keyboardCallbacks.forEach((callback) => {
       this.input.keyboard!.off("keydown", callback);
     });
@@ -586,7 +347,7 @@ export class GameScene extends Phaser.Scene {
     Object.entries(keyMappings).forEach(([key, action]) => {
       const callback = () => {
         if (this.gameState.isPlaying && !this.isInputLocked) {
-          this.safeExecute(() => action(), `keydown-${key}`);
+          action();
         }
       };
       this.input.keyboard!.on(`keydown-${key}`, callback);
@@ -596,33 +357,28 @@ export class GameScene extends Phaser.Scene {
 
   // [他のメソッドは省略 - 必要に応じて同様のデバッグ機能を追加]
 
-  private handleGameStart(): void {
-    this.logOperation("handleGameStart");
+  private async handleGameStart(): Promise<void> {
+    this.pieceQueue = [];
     this.startGameplay();
   }
 
   private handleGamePause(): void {
-    this.logOperation("handleGamePause");
     this.pauseGameplay();
   }
 
   private handleGameResume(): void {
-    this.logOperation("handleGameResume");
     this.resumeGameplay();
   }
 
   private handleGameRestart(): void {
-    this.logOperation("handleGameRestart");
     this.restartGame();
   }
 
   private handleGameStop(): void {
-    this.logOperation("handleGameStop");
     this.stopGameplay();
   }
 
   private pauseGameplay(): void {
-    DebugLogger.debug("Pausing gameplay...");
     this.gameState.isPlaying = false;
 
     if (this.fallTimer) {
@@ -631,7 +387,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private resumeGameplay(): void {
-    DebugLogger.debug("Resuming gameplay...");
     this.gameState.isPlaying = true;
 
     if (this.fallTimer) {
@@ -640,7 +395,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private stopGameplay(): void {
-    DebugLogger.debug("Stopping gameplay...");
     this.gameState.isPlaying = false;
 
     this.stopFallTimer();
@@ -649,21 +403,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private restartGame(): void {
-    this.logOperation("restartGame");
     this.stopGameplay();
     this.resetGameState();
     this.gameUI.updateScore(0, 1, 0);
     this.isInputLocked = false;
 
-    // カウンターをリセット
-    Object.keys(this.debugCounters).forEach((key) => {
-      if (key !== "lastOperationTime") {
-        (this.debugCounters as any)[key] = 0;
-      }
-    });
+    this.pieceQueue = [];
 
     this.startGameplay();
-    DebugLogger.info("Game restarted!");
   }
 
   private resetGameState(): void {
@@ -676,18 +423,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMove(dx: number, dy: number): void {
-    this.logOperation(`handleMove(${dx}, ${dy})`);
     this.movePiece(dx, dy);
   }
 
   private handleRotate(): void {
-    this.logOperation("handleRotate");
-    this.debugCounters.rotationAttempts++;
     this.rotatePiece();
   }
 
   private handleDrop(): void {
-    this.logOperation("handleDrop");
     this.dropPiece();
   }
 
@@ -941,21 +684,21 @@ export class GameScene extends Phaser.Scene {
 
     const x = startX + col * CELL_SIZE;
     const y = startY + row * CELL_SIZE;
-    const color = TETROMINO_COLORS[value - 1] || 0xffffff;
+    // グリッドセルでは値をそのまま使用（I-テトロミノの値は1）
+    const color = TETROMINO_COLORS[value] || 0xffffff;
 
     this.gridGraphics.fillStyle(color, 1);
     this.gridGraphics.fillRect(x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2);
   }
 
   private drawCurrentPiece(): void {
-    if (!this.currentPiece.blocks || !this.currentPiece.type) return;
+    if (!this.currentPiece.blocks || this.currentPiece.type === null) return;
 
     const { startX, startY } = this.getGridPosition();
     const { CELL_SIZE } = GAME_CONFIG.GRID;
-    const colorIndex = Object.values(TetrominoType).indexOf(
-      this.currentPiece.type
-    );
-    const color = TETROMINO_COLORS[colorIndex];
+    const colorIndex = this.currentPiece.type as number;
+    // I-テトロミノ（type=0）の場合、インデックス1（シアン色）を使用
+    const color = TETROMINO_COLORS[colorIndex + 1];
 
     this.currentPiece.blocks.forEach((row, rowIndex) => {
       row.forEach((cell, colIndex) => {
@@ -1003,7 +746,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private cleanup(): void {
-    DebugLogger.info("Cleaning up GameScene...");
     this.gameUI?.destroy();
     this.stopFallTimer();
     this.keyboardCallbacks.forEach((callback) => {
@@ -1011,4 +753,5 @@ export class GameScene extends Phaser.Scene {
     });
     this.keyboardCallbacks = [];
   }
+
 }

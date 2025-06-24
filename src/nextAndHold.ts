@@ -2,13 +2,13 @@
  * テトリミノの種類を表す列挙型
  */
 export enum TetrominoType {
-  I = "I",
-  O = "O",
-  T = "T",
-  S = "S",
-  Z = "Z",
-  J = "J",
-  L = "L",
+  I = 0,
+  O = 1,
+  T = 2,
+  S = 3,
+  Z = 4,
+  J = 5,
+  L = 6,
 }
 
 /**

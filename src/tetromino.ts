@@ -100,7 +100,7 @@ const TETROMINOS: BlockShape[] = [
  * インデックス0は空のセル、1-7が各テトロミノの色に対応
  */
 export const TETROMINO_COLORS: number[] = [
-  0x000000, // 0: 空（黒）
+  0x000000, // 0: 空（黒）- グリッド用
   0x00ffff, // 1: I型（シアン）
   0xffff00, // 2: O型（黄色）
   0x800080, // 3: T型（紫）
